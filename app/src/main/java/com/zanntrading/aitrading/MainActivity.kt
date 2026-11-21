@@ -133,19 +133,21 @@ class MainActivity : Activity() {
                     marketInfo.setTextColor(green)
                 }
 
-            } catch (e: Exception) {
-                runOnUiThread {
-                    marketInfo.text =
-                        "Status: KONEKSI GAGAL\n" +
-                        "BTC/USDT: Tidak tersedia\n" +
-                        "ETH/USDT: Tidak tersedia\n" +
-                        "Periksa internet atau coba lagi."
+          } catch (e: Exception) {
+    val error = "${e.javaClass.simpleName}: ${e.message ?: "Tidak ada detail"}"
 
-                    marketInfo.setTextColor(red)
-                }
-            }
-        }
+    runOnUiThread {
+        marketInfo.text =
+            "Status: KONEKSI GAGAL\n" +
+            "Penyebab: $error\n" +
+            "BTC/USDT: Tidak tersedia\n" +
+            "ETH/USDT: Tidak tersedia"
+
+        marketInfo.setTextColor(red)
     }
+}
+                }
+           }
 
     private fun showDashboard() {
         val root = LinearLayout(this).apply {
