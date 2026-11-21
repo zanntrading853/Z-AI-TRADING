@@ -33,10 +33,18 @@ class MainActivity : Activity() {
         }
     }
 
+    private val candleUpdateTask = object : Runnable {
+        override fun run() {
+            fetchCandles()
+            handler.postDelayed(this, 60000)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showDashboard()
         handler.post(updateTask)
+        handler.post(candleUpdateTask)
     }
 
     private fun text(value: String, size: Float, color: Int): TextView {
@@ -149,6 +157,64 @@ class MainActivity : Activity() {
                 }
            }
 
+
+    private lateinit var candleChart: CandlestickChartView
+
+    private fun fetchCandles() {
+        executor.execute {
+            try {
+                val url = URL(
+                    "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=60"
+                )
+                val connection = url.openConnection() as HttpURLConnection
+
+                val data = try {
+                    connection.connectTimeout = 10000
+                    connection.readTimeout = 10000
+
+                    if (connection.responseCode != 200) {
+                        throw Exception("HTTP ${connection.responseCode}")
+                    }
+
+                    val response = connection.inputStream.bufferedReader().use {
+                        it.readText()
+                    }
+
+                    val array = org.json.JSONArray(response)
+                    val result = mutableListOf<Candle>()
+
+                    for (i in 0 until array.length()) {
+                        val item = array.getJSONArray(i)
+                        result.add(
+                            Candle(
+                                item.getString(1).toDouble(),
+                                item.getString(2).toDouble(),
+                                item.getString(3).toDouble(),
+                                item.getString(4).toDouble()
+                            )
+                        )
+                    }
+
+                    result
+                } finally {
+                    connection.disconnect()
+                }
+
+                runOnUiThread {
+                    candleChart.setCandles(data)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Grafik gagal dimuat: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     private fun showDashboard() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -185,6 +251,19 @@ class MainActivity : Activity() {
         )
 
         marketPanel()
+
+        panel("BTC/USDT CANDLESTICK", "60 candle Binance - interval 1 menit")
+
+        candleChart = CandlestickChartView(this)
+        content.addView(
+            candleChart,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                500
+            )
+        )
+        fetchCandles()
+
 
         panel(
             "XAUUSD / GOLD",
@@ -239,6 +318,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         handler.removeCallbacks(updateTask)
+        handler.removeCallbacks(candleUpdateTask)
         executor.shutdownNow()
         super.onDestroy()
     }
