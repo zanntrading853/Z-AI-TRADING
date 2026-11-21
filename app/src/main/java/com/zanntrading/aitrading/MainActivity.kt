@@ -22,6 +22,7 @@ class MainActivity : Activity() {
 
     private lateinit var content: LinearLayout
     private lateinit var marketInfo: TextView
+    private lateinit var signalInfo: TextView
 
     private val handler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
@@ -202,6 +203,29 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     candleChart.setCandles(data)
+
+                    try {
+                        val result = TechnicalIndicators.calculate(data)
+                        signalInfo.text = """
+                            Rekomendasi: ${result.recommendation}
+                            Skor kondisi: ${result.score}%
+                            EMA 20: ${String.format(java.util.Locale.US, "%.2f", result.ema20)}
+                            EMA 50: ${String.format(java.util.Locale.US, "%.2f", result.ema50)}
+                            RSI 14: ${String.format(java.util.Locale.US, "%.2f", result.rsi)}
+                            MACD: ${String.format(java.util.Locale.US, "%.4f", result.macd)}
+                            MACD Signal: ${String.format(java.util.Locale.US, "%.4f", result.macdSignal)}
+                        """.trimIndent()
+
+                        signalInfo.setTextColor(
+                            when (result.recommendation) {
+                                "BUY" -> green
+                                "SELL" -> red
+                                else -> white
+                            }
+                        )
+                    } catch (e: Exception) {
+                        signalInfo.text = "Analisis belum tersedia: ${e.message}"
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -262,18 +286,28 @@ class MainActivity : Activity() {
                 500
             )
         )
-        fetchCandles()
-
-
         panel(
             "XAUUSD / GOLD",
             "Status: Menunggu koneksi MT5"
         )
 
-        panel(
-            "AI SIGNAL",
-            "Belum ada sinyal aktif\nMenunggu data pasar untuk analisis"
+        val signalBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(card)
+            setPadding(12, 12, 12, 12)
+        }
+
+        signalBox.addView(text("AI SIGNAL", 18f, green))
+        signalInfo = text("Menunggu data Binance untuk analisis...", 14f, white)
+        signalBox.addView(signalInfo)
+
+        val signalParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
         )
+        signalParams.setMargins(0, 8, 0, 8)
+        content.addView(signalBox, signalParams)
+        fetchCandles()
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
