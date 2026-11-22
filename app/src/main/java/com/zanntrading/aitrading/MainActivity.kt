@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private val candleUpdateTask = object : Runnable {
         override fun run() {
             fetchCandles()
+            fetchMultiTimeframe()
             handler.postDelayed(this, 60000)
         }
     }
@@ -160,6 +161,108 @@ class MainActivity : Activity() {
 
 
     private lateinit var candleChart: CandlestickChartView
+    private lateinit var multiTimeframeInfo: TextView
+
+
+    private fun fetchMultiTimeframe() {
+        executor.execute {
+            try {
+                val intervals = listOf(
+                    "1 MENIT" to "1m",
+                    "5 MENIT" to "5m",
+                    "15 MENIT" to "15m",
+                    "1 JAM" to "1h"
+                )
+
+                val analyses = mutableListOf<Pair<String, SignalAnalysis>>()
+
+                for ((label, interval) in intervals) {
+                    val url = URL(
+                        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=$interval&limit=60"
+                    )
+
+                    val connection = url.openConnection() as HttpURLConnection
+
+                    val candles = try {
+                        connection.connectTimeout = 10000
+                        connection.readTimeout = 10000
+
+                        if (connection.responseCode != 200) {
+                            throw Exception("HTTP ${connection.responseCode}")
+                        }
+
+                        val response = connection.inputStream.bufferedReader().use {
+                            it.readText()
+                        }
+
+                        val array = org.json.JSONArray(response)
+                        val result = mutableListOf<Candle>()
+
+                        for (i in 0 until array.length()) {
+                            val item = array.getJSONArray(i)
+                            result.add(
+                                Candle(
+                                    item.getString(1).toDouble(),
+                                    item.getString(2).toDouble(),
+                                    item.getString(3).toDouble(),
+                                    item.getString(4).toDouble()
+                                )
+                            )
+                        }
+
+                        result
+                    } finally {
+                        connection.disconnect()
+                    }
+
+                    analyses.add(
+                        label to TechnicalIndicators.calculate(candles)
+                    )
+                }
+
+                val buyCount = analyses.count { it.second.recommendation == "BUY" }
+                val sellCount = analyses.count { it.second.recommendation == "SELL" }
+
+                val overall = when {
+                    buyCount >= 3 -> "BUY"
+                    sellCount >= 3 -> "SELL"
+                    else -> "HOLD"
+                }
+
+                val report = buildString {
+                    appendLine("BTC/USDT MULTI-TIMEFRAME")
+                    appendLine()
+
+                    for ((label, result) in analyses) {
+                        appendLine(
+                            "$label: ${result.recommendation} (${result.score}%)"
+                        )
+                    }
+
+                    appendLine()
+                    appendLine("BUY: $buyCount dari 4 timeframe")
+                    appendLine("SELL: $sellCount dari 4 timeframe")
+                    appendLine("KESIMPULAN GABUNGAN: $overall")
+                }
+
+                runOnUiThread {
+                    multiTimeframeInfo.text = report
+                    multiTimeframeInfo.setTextColor(
+                        when (overall) {
+                            "BUY" -> green
+                            "SELL" -> red
+                            else -> white
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    multiTimeframeInfo.text =
+                        "Analisis multi-timeframe gagal: ${e.message}"
+                }
+            }
+        }
+    }
 
     private fun fetchCandles() {
         executor.execute {
@@ -307,6 +410,28 @@ class MainActivity : Activity() {
         )
         signalParams.setMargins(0, 8, 0, 8)
         content.addView(signalBox, signalParams)
+
+        val multiBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(card)
+            setPadding(12, 12, 12, 12)
+        }
+
+        multiBox.addView(text("MULTI-TIMEFRAME ANALYSIS", 18f, green))
+        multiTimeframeInfo = text(
+            "Menunggu analisis 1m, 5m, 15m, dan 1h...",
+            14f,
+            white
+        )
+        multiBox.addView(multiTimeframeInfo)
+
+        val multiParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        multiParams.setMargins(0, 8, 0, 8)
+        content.addView(multiBox, multiParams)
+
         fetchCandles()
 
         val actions = LinearLayout(this).apply {
