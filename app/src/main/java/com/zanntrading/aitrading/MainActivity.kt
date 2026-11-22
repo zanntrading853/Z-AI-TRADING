@@ -23,6 +23,9 @@ class MainActivity : Activity() {
     private lateinit var content: LinearLayout
     private lateinit var marketInfo: TextView
     private lateinit var signalInfo: TextView
+    private lateinit var candleChart: CandlestickChartView
+    private lateinit var multiTimeframeInfo: TextView
+
 
     private val handler = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
