@@ -36,8 +36,14 @@ object TechnicalIndicators {
 
         val closes = candles.map { it.close }
 
+        require(closes.all { it.isFinite() && it > 0.0 }) {
+            "Data harga tidak valid"
+        }
+
         val ema20Values = ema(closes, 20)
         val ema50Values = ema(closes, 50)
+        val ema12 = ema(closes, 12)
+        val ema26 = ema(closes, 26)
 
         val gains = mutableListOf<Double>()
         val losses = mutableListOf<Double>()
@@ -57,9 +63,6 @@ object TechnicalIndicators {
             else -> 100.0 - (100.0 / (1.0 + averageGain / averageLoss))
         }
 
-        val ema12 = ema(closes, 12)
-        val ema26 = ema(closes, 26)
-
         val macdValues = closes.indices.map {
             ema12[it] - ema26[it]
         }
@@ -70,15 +73,23 @@ object TechnicalIndicators {
         val latestEma50 = ema50Values.last()
         val latestMacd = macdValues.last()
         val latestSignal = signalValues.last()
+        val latestClose = closes.last()
+
+        val ema20Rising = latestEma20 > ema20Values[ema20Values.size - 6]
+        val ema20Falling = latestEma20 < ema20Values[ema20Values.size - 6]
 
         val buyConditions = listOf(
             latestEma20 > latestEma50,
+            latestClose > latestEma20,
+            ema20Rising,
             rsi > 50.0 && rsi < 70.0,
             latestMacd > latestSignal
         )
 
         val sellConditions = listOf(
             latestEma20 < latestEma50,
+            latestClose < latestEma20,
+            ema20Falling,
             rsi < 50.0 && rsi > 30.0,
             latestMacd < latestSignal
         )
@@ -87,15 +98,15 @@ object TechnicalIndicators {
         val sellScore = sellConditions.count { it }
 
         val recommendation = when {
-            buyScore == 3 -> "BUY"
-            sellScore == 3 -> "SELL"
+            buyConditions.first() && buyScore >= 4 -> "BUY"
+            sellConditions.first() && sellScore >= 4 -> "SELL"
             else -> "HOLD"
         }
 
         val score = when (recommendation) {
-            "BUY" -> buyScore * 100 / 3
-            "SELL" -> sellScore * 100 / 3
-            else -> maxOf(buyScore, sellScore) * 100 / 3
+            "BUY" -> buyScore * 20
+            "SELL" -> sellScore * 20
+            else -> maxOf(buyScore, sellScore) * 20
         }
 
         return SignalAnalysis(
