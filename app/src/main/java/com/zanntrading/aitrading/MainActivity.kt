@@ -127,43 +127,66 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun fetchGoldPrice(): String {
+        val url = URL("https://xaus.com/api/v1/spot")
+        val connection = url.openConnection() as HttpURLConnection
+
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            if (connection.responseCode != 200) {
+                throw Exception("HTTP ${connection.responseCode}")
+            }
+
+            val response = connection.inputStream.bufferedReader().use {
+                it.readText()
+            }
+
+            val json = JSONObject(response)
+            return json.getJSONObject("xau").getString("price")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     private fun fetchMarketPrices() {
         executor.execute {
+            var btc = "Tidak tersedia"
+            var eth = "Tidak tersedia"
+            var gold = "Tidak tersedia"
+
             try {
-                val btc = fetchPrice("BTCUSDT")
-                val eth = fetchPrice("ETHUSDT")
+                btc = fetchPrice("BTCUSDT")
+                eth = fetchPrice("ETHUSDT")
+            } catch (e: Exception) {
+                android.util.Log.e("AI_TRADING", "Binance error", e)
+            }
 
-                runOnUiThread {
-                    marketInfo.text =
-                        "Status: TERHUBUNG\n" +
-                        "BTC/USDT: $$btc\n" +
-                        "ETH/USDT: $$eth\n" +
-                        "Update otomatis: 15 detik"
+            try {
+                gold = fetchGoldPrice()
+            } catch (e: Exception) {
+                android.util.Log.e("AI_TRADING", "GOLD error", e)
+            }
 
-                    marketInfo.setTextColor(green)
-                }
+            val btcOk = btc != "Tidak tersedia"
+            val ethOk = eth != "Tidak tersedia"
+            val goldOk = gold != "Tidak tersedia"
 
-          } catch (e: Exception) {
-    val error = "${e.javaClass.simpleName}: ${e.message ?: "Tidak ada detail"}"
+            runOnUiThread {
+                marketInfo.text =
+                    "Status: ${if (btcOk && ethOk && goldOk) "TERHUBUNG" else "SEBAGIAN TERHUBUNG"}" +
+                    "\nBTC/USDT: $$btc" +
+                    "\nETH/USDT: $$eth" +
+                    "\nXAU/USD (GOLD): $$gold" +
+                    "\nSumber GOLD: xaus.com" +
+                    "\nUpdate otomatis: 15 detik"
 
-    runOnUiThread {
-        marketInfo.text =
-            "Status: KONEKSI GAGAL\n" +
-            "Penyebab: $error\n" +
-            "BTC/USDT: Tidak tersedia\n" +
-            "ETH/USDT: Tidak tersedia"
-
-        marketInfo.setTextColor(red)
+                marketInfo.setTextColor(if (btcOk || ethOk || goldOk) green else red)
+            }
+        }
     }
-}
-                }
-           }
-
-
-    private lateinit var candleChart: CandlestickChartView
-    private lateinit var multiTimeframeInfo: TextView
-
-
     private fun fetchMultiTimeframe() {
         executor.execute {
             try {
