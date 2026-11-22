@@ -378,6 +378,10 @@ class MainActivity : Activity() {
                 val url = URL("https://xaus.com/api/v1/history?symbol=xau")
                 val connection = url.openConnection() as HttpURLConnection
 
+                var dataStatus = "unknown"
+                var dataAgeSeconds = -1L
+                var lastCandleDate = "-"
+
                 val data = try {
                     connection.connectTimeout = 15000
                     connection.readTimeout = 15000
@@ -391,7 +395,20 @@ class MainActivity : Activity() {
                         it.readText()
                     }
 
-                    val points = JSONObject(response).getJSONArray("points")
+                    val root = JSONObject(response)
+                    val dataState = root.optJSONObject("data_state")
+                    dataStatus = dataState?.optString("status", "unknown") ?: "unknown"
+                    dataAgeSeconds = dataState?.optLong("age_seconds", -1L) ?: -1L
+
+                    val points = root.getJSONArray("points")
+                    if (points.length() == 0) {
+                        throw Exception("Data candle GOLD kosong")
+                    }
+
+                    lastCandleDate = points
+                        .getJSONObject(points.length() - 1)
+                        .optString("d", "-")
+
                     val start = (points.length() - 60).coerceAtLeast(0)
                     val result = mutableListOf<Candle>()
                     var previousClose: Double? = null
@@ -421,10 +438,19 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     goldChart.setCandles(data)
 
+                    val ageText = if (dataAgeSeconds >= 0) {
+                        "$dataAgeSeconds detik"
+                    } else {
+                        "tidak tersedia"
+                    }
+
                     try {
                         val result = TechnicalIndicators.calculate(data)
                         goldSignalInfo.text =
                             "GOLD BUY/SELL: ${result.recommendation}" +
+                            "\nStatus data API: $dataStatus" +
+                            "\nUmur data API: $ageText" +
+                            "\nCandle terakhir: $lastCandleDate" +
                             "\nSkor kondisi: ${result.score}%" +
                             "\nEMA 20: ${String.format(java.util.Locale.US, "%.2f", result.ema20)}" +
                             "\nEMA 50: ${String.format(java.util.Locale.US, "%.2f", result.ema50)}" +
@@ -432,6 +458,7 @@ class MainActivity : Activity() {
                             "\nMACD: ${String.format(java.util.Locale.US, "%.4f", result.macd)}" +
                             "\nMACD Signal: ${String.format(java.util.Locale.US, "%.4f", result.macdSignal)}" +
                             "\nCandle: ${data.size} harian (Open estimasi)"
+
                         goldSignalInfo.setTextColor(
                             when (result.recommendation) {
                                 "BUY" -> green
@@ -440,7 +467,11 @@ class MainActivity : Activity() {
                             }
                         )
                     } catch (e: Exception) {
-                        goldSignalInfo.text = "Analisis GOLD belum tersedia: ${e.message}"
+                        goldSignalInfo.text =
+                            "Status data API: $dataStatus" +
+                            "\nUmur data API: $ageText" +
+                            "\nCandle terakhir: $lastCandleDate" +
+                            "\nAnalisis GOLD belum tersedia: ${e.message}"
                     }
                 }
             } catch (e: Exception) {
