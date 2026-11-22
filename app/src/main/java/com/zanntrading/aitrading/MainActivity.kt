@@ -25,6 +25,8 @@ class MainActivity : Activity() {
     private lateinit var signalInfo: TextView
     private lateinit var candleChart: CandlestickChartView
     private lateinit var multiTimeframeInfo: TextView
+    private lateinit var goldChart: CandlestickChartView
+    private lateinit var goldSignalInfo: TextView
 
 
     private val handler = Handler(Looper.getMainLooper())
@@ -41,6 +43,7 @@ class MainActivity : Activity() {
         override fun run() {
             fetchCandles()
             fetchMultiTimeframe()
+            fetchGoldCandles()
             handler.postDelayed(this, 60000)
         }
     }
@@ -368,6 +371,86 @@ class MainActivity : Activity() {
         }
     }
 
+
+    private fun fetchGoldCandles() {
+        executor.execute {
+            try {
+                val url = URL("https://xaus.com/api/v1/history?symbol=xau")
+                val connection = url.openConnection() as HttpURLConnection
+
+                val data = try {
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 15000
+                    connection.requestMethod = "GET"
+
+                    if (connection.responseCode != 200) {
+                        throw Exception("HTTP ${connection.responseCode}")
+                    }
+
+                    val response = connection.inputStream.bufferedReader().use {
+                        it.readText()
+                    }
+
+                    val points = JSONObject(response).getJSONArray("points")
+                    val start = (points.length() - 60).coerceAtLeast(0)
+                    val result = mutableListOf<Candle>()
+                    var previousClose: Double? = null
+
+                    for (i in start until points.length()) {
+                        val item = points.getJSONObject(i)
+                        val close = item.getDouble("c")
+                        val sourceHigh = item.getDouble("h")
+                        val sourceLow = item.getDouble("l")
+                        val open = previousClose ?: close
+
+                        result.add(
+                            Candle(
+                                open,
+                                maxOf(sourceHigh, open, close),
+                                minOf(sourceLow, open, close),
+                                close
+                            )
+                        )
+                        previousClose = close
+                    }
+                    result
+                } finally {
+                    connection.disconnect()
+                }
+
+                runOnUiThread {
+                    goldChart.setCandles(data)
+
+                    try {
+                        val result = TechnicalIndicators.calculate(data)
+                        goldSignalInfo.text =
+                            "GOLD BUY/SELL: ${result.recommendation}" +
+                            "\nSkor kondisi: ${result.score}%" +
+                            "\nEMA 20: ${String.format(java.util.Locale.US, "%.2f", result.ema20)}" +
+                            "\nEMA 50: ${String.format(java.util.Locale.US, "%.2f", result.ema50)}" +
+                            "\nRSI 14: ${String.format(java.util.Locale.US, "%.2f", result.rsi)}" +
+                            "\nMACD: ${String.format(java.util.Locale.US, "%.4f", result.macd)}" +
+                            "\nMACD Signal: ${String.format(java.util.Locale.US, "%.4f", result.macdSignal)}" +
+                            "\nCandle: ${data.size} harian (Open estimasi)"
+                        goldSignalInfo.setTextColor(
+                            when (result.recommendation) {
+                                "BUY" -> green
+                                "SELL" -> red
+                                else -> white
+                            }
+                        )
+                    } catch (e: Exception) {
+                        goldSignalInfo.text = "Analisis GOLD belum tersedia: ${e.message}"
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    goldSignalInfo.text = "Data GOLD gagal dimuat: ${e.message}"
+                }
+            }
+        }
+    }
+
     private fun showDashboard() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -416,9 +499,26 @@ class MainActivity : Activity() {
             )
         )
         panel(
-            "XAUUSD / GOLD",
-            "Status: Menunggu koneksi MT5"
+            "XAUUSD / GOLD CANDLESTICK",
+            "60 candle harian dari XAUS - Open estimasi"
         )
+
+        goldChart = CandlestickChartView(this)
+        content.addView(
+            goldChart,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                500
+            )
+        )
+
+        goldSignalInfo = text(
+            "Menunggu data dan analisis GOLD...",
+            14f,
+            white
+        )
+        panel("GOLD TECHNICAL ANALYSIS", "")
+        content.addView(goldSignalInfo)
 
         val signalBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
